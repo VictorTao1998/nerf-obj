@@ -1,0 +1,79 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: jianyu-nerf-obj # Replace with something like "${USER_NAME}-{EXP_NAME}"
+  namespace: ucsd-haosulab
+spec:
+  ttlSecondsAfterFinished: 86400  # Wait one day to delete completed jobs
+  template:
+    spec:
+      containers:
+        - name: gpu-container
+          image: isabella98/active_light_nerf:latest  # docker image
+          # imagePullPolicy: Always
+          command:
+            - "/bin/bash"
+            - "-c"
+          args:
+            - "apt install -y imagemagick && cd /isabella-slow/NeRF/NeRF && export PYTHONPATH=. && python train_nerf.py --config config/llff-messytable-rgb.yml"
+            # Replace with your command	
+            # For multiple commands, concatenate them with &&
+          resources:
+            requests:
+              cpu: "4"
+              memory: "10Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "6"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+              
+            - name: cephfs
+              mountPath: /cephfs
+              
+            - name: isabella-fast-vol
+              mountPath: isabella-fast
+              
+            - name: isabella-slow-vol
+              mountPath: isabella-slow
+              
+      volumes:
+        - name: dshm  # shared memory, required for the multi-worker dataloader
+          emptyDir:
+            medium: Memory
+            
+        - name: cephfs
+          persistentVolumeClaim:
+            claimName: haosulab-cephfs
+            
+        - name: isabella-fast-vol
+          persistentVolumeClaim:
+            claimName: isabella-fast-vol
+            
+        - name: isabella-slow-vol
+          persistentVolumeClaim:
+            claimName: isabella-slow-vol
+            
+      restartPolicy: Never
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: nautilus.io/group
+                    operator: In
+                    values:
+                      - haosu
+                  - key: gpu-type
+                    operator: In
+                    values:
+                      - 2080Ti
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values:
+                      - k8s-haosu-21.sdsc.optiputer.net
+                      
+  backoffLimit: 0  # The number of attempts to restart after crash
